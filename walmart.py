@@ -14,7 +14,7 @@ logger.setLevel(logging.INFO)
 
 #create console handlerto send output to terminal 
 ch = logging.StreamHandler()
-ch.setLevel(logging.INFO)
+ch.setLevel(logging.DEBUG)
 ch.setFormatter(CustomFormatter())
 logger.addHandler(ch)
 
@@ -128,7 +128,7 @@ def parse_receipt_data(receipt_img_file: str) -> dict:
                 logger.warning('card last 4 digits not found on correct line')
                 return 
                 
-        receipt_total_match = re.search(r'TOTAL (\d+\.\d+)', scan_data)
+        receipt_total_match = re.search(r'(?<!SUB)TOTAL (\d+\.\d+)', scan_data)
         if not receipt_total_match:
                 logger.warning('no receipt total found by parser')
                 return  
@@ -150,6 +150,7 @@ def parse_receipt_data(receipt_img_file: str) -> dict:
         except UnboundLocalError as e: 
                 logger.warning(f'error parsing receipt: {e}')
                 return False
+        logger.debug(f'receipt info: {receipt_info}')
         return receipt_info       
 
 
@@ -173,8 +174,6 @@ def itemize_walmart_receipt(
         }
         
                 
-        
-        print(data) 
         url = 'https://www.walmart.com/chcwebapp/api/receipts'
         headers = {
                 'sec-ch-ua':'"Chromium";v="98", " Not A;Brand";v="99", "Google Chrome";v="98"',
@@ -215,8 +214,7 @@ if __name__ == "__main__":
         rec1_data = parse_receipt_data(receipt_img_file=receipts[0])
         # if the parser extracted data from the receipt correctly 
         if rec1_data:
-                print(rec1_data)
-                # itemize_walmart_receipt(**rec1_data)
+                itemize_walmart_receipt(**rec1_data)
         else: 
                 logger.critical("there was an error parsing the receipt data")
 
