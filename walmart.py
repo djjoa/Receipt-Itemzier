@@ -6,11 +6,13 @@ import re
 from glob import glob
 from custom_logger import CustomFormatter
 import logging 
+import numpy as np
+import cv2 
 
 # reference: https://stackoverflow.com/questions/384076/how-can-i-color-python-logging-output
 # create logger from custom logger class 
 logger = logging.getLogger("walmart")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 #create console handlerto send output to terminal 
 ch = logging.StreamHandler()
@@ -20,25 +22,11 @@ logger.addHandler(ch)
 
 logger.info('starting walmart receipt parser')
 
-# @dataclass
-# class Receipt: 
-#         store_number : str
-#         card_last_4: str 
-#         card_type :str 
-#         purchase_date: str 
-#         receipt_total: str 
-        # broken 
-        # card_types : list = list([
-        #         "Visa",
-        #         "Mastercard",
-        #         "Amex",
-        #         "Discover",                 
-        #         "Debit", 
-        #         "Other"])
-
 #todo need to rework the loop validation. Havent set everything up to run through a list yet. 
 
+
 receipts = glob('receipts/*', recursive=False)
+processed_receipts = glob('processed_receipts/*', recursive=False)
 logger.debug(f"found {len(receipts)} receipts")
 # url  https://walmart.com/receipt-lookup
 # sent after submitting receipt lookup https://walmart.com/chcwebapp/api/receipts
@@ -53,8 +41,43 @@ card_types = ["Visa", "Mastercard",
               "Amex", "Discover", 
               "Debit", "Other"]
 
+
+# convert image file into grayscale
+
+def grayscale_image(receipt_img_file: str) -> np.array: 
+        # Images must be converted into grayscale before they can be processed by Tesseract.
+        # https://stackoverflow.com/questions/48379205/how-to-manual-convert-bgr-image-to-grayscale-python-opencv
+        img = cv2.imread(receipt_img_file)
+        w = np.array([[[ 0.07, 0.72,  0.21]]])
+        gray2 = cv2.convertScaleAbs(np.sum(img*w, axis=2))
+        # cv2.imshow('Grayscale',gray2)
+        # cv2.waitKey(0)
+        return gray2 # returns a numpy array 
+
+def adaptive_guassian_thresholding(grayscale_image: np.array) -> np.array:
+        # removes noise and smoothes the image
+        img = cv2.medianBlur(grayscale_image,5)
+        thresh = cv2.adaptiveThreshold(
+                img,255,
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY,11,2
+                ) 
+        # cv2.imshow('Adapative Gaussian Thresholding', thresh)
+        # cv2.waitKey(0)
+        return thresh 
+
+
+def preprocess_image( receipt_img_file: str) -> None: 
+        '''writes processed receipt to processed_receipts folder'''
+        logger.info(f'preprocessing receipt {receipt_img_file}')
+        grayscale_img = grayscale_image(receipt_img_file)
+        gaussian_img = adaptive_guassian_thresholding(grayscale_img) 
+        logger.info(f'writing processed receipt to processed_receipts/{receipt_img_file}')
+        cv2.imwrite(f'processed_receipts/{receipt_img_file}', gaussian_img) 
+
+
 def parse_receipt_data(receipt_img_file: str) -> dict: 
-        logger.info(f'parsing receipt {receipt_img_file}')
+        logger.info(f"parsing receipt {receipt_img_file}")
         
         scan_data = pytesseract.image_to_string(Image.open(receipt_img_file))
         if scan_data: 
@@ -164,7 +187,7 @@ def itemize_walmart_receipt(
         purchase_date: str,
         receipt_total: str
         ): 
-         
+        
         data = {
                 "storeId":f"{store_number}",
                 "purchaseDate":f"{purchase_date}",
@@ -196,7 +219,6 @@ def itemize_walmart_receipt(
         #         item_upc = item['upc']
         #         item_price = item['price']
         #         item_quantity = item['quantity']
-
         #         print(
         #                 f"item_description: {item_description}\n",
         #                 f"item_id: {item_id}\n",
@@ -211,12 +233,17 @@ def itemize_walmart_receipt(
 
 
 if __name__ == "__main__":
-        rec1_data = parse_receipt_data(receipt_img_file=receipts[0])
+        # todo test
+        # preprocess the receipts 
+        [preprocess_image(file) for file in preprocess_receipts]
+        all_receipt_data  = [parse_receipt_data(file) for file in processed_receipts]  
         # if the parser extracted data from the receipt correctly 
-        if rec1_data:
-                itemize_walmart_receipt(**rec1_data)
-        else: 
-                logger.critical("there was an error parsing the receipt data")
+        for rec in all_receipt_data:
+                if rec: 
+                        print(f'would be itemized')
+                        # itemize_walmart_receipt(**rec1_data)
+                else: 
+                        logger.critical("there was an error parsing the receipt data")
 
 
 # TODO left off here 
